@@ -1,0 +1,101 @@
+---
+title: "The Gender Wage Gap Myth Myth"
+author: "Hariharan Jayashankar"
+output:
+  html_document:
+    df_print: paged
+---
+
+This notebook simulates data and does a couple of regressions to see the effect of colliders and confounders on regression estimates.
+
+Loading packages
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(tidyverse) # easy data stuff if needed
+library(stargazer) # nice output
+```
+
+### Generating Data
+
+```{r}
+# number of individuals
+n = 1000
+
+# half the population is female
+female <- runif(n, min=0, max=1) > 0.5
+
+# ability is independant of gender
+ability <- rnorm(n)
+
+# discrimination (we could use the female var, but just to make things clear)
+disc <- female == TRUE
+
+# Occupation is ranked monotonically according to specificed function
+occ <- 1 + 2 * ability + 0 * female + (-2) * disc + rnorm(n)
+
+# wage
+wage <- 1 + (-1)*disc + (1)*occ + 2*ability + rnorm(n)
+
+# Making it all a table
+df <- tbl_df(data.frame(female, ability, disc, occ, wage))
+```
+
+So being a female doesn't explicitly affect occupation, but it affects it through discimination. 
+
+Wage is also a function of discrimination even for the same occupation (which itself is an outcome of discrimination)
+
+Lets regress wages on gender (female)
+
+
+```{r, results='asis'}
+mod_base <-         lm(wage ~ female, data=df)
+mod_badcontrol <-   lm(wage ~ female + occ, data = df)
+mod_god <-          lm(wage ~ female + occ + ability, data = df)
+
+stargazer(mod_base, mod_badcontrol, mod_god, type = 'html')
+```
+
+
+### Interpretting
+
+The base coefficient which can be interpretted as the unconditional estimate of the effect of being female on wages is `r mod_base$coefficients[2]`. It's negative because of 2 effects: 
+
+
+1. discrimination -> wages
+2. discrimination -> occupation -> wages
+
+
+
+Both of these effects work in the same direction. Being a female gives you worse jobs and being a female gives you a worse wage given the same job.
+
+The specification with the bad control gives us the coefficient of `r mod_badcontrol$coefficients[2]`. This is showing a positive coefficient. Effectively what we have done by including the control of occupation is open up the channel of disc -> occ <- ability -> wages.
+
+Another classical way of thinking of it is that the $\beta$ coefficient just doesn't have the same interpretation anymore.
+
+What we want is $\mathbb{E}(w_{fi} - w_{mi})$ ($w_{di}$) refers to wages of an individual i if he/she was assigned to treatment d, where d can be m for male of f for female). In a typical randomized setting where we randomize gender (although we actually cant do that in reality), a regression of wages on gender would give us
+
+$$
+\mathbb{E}(w | gender_i = female) - \mathbb{E}(w | gender_i = male) \\
+= \mathbb{E}(w_{fi} | gender_i = female) - \mathbb{E}(w_{mi} | gender_i = male) \\
+= \mathbb{E}(w_{fi} - w_{mi})
+$$
+
+Last step comes from independance of gender assignment in our imaginary world to wages (outcomes)
+
+But in the bad control case, this is how it goes.
+
+$$
+\mathbb{E}(w | gender_i = female, occ_{di} = o) - \mathbb{E}(w | gender_i = male, occ_{di} = o) \\
+= \mathbb{E}(w_{fi} | gender_i = female, occ_{fi} = o) - \mathbb{E}(w_{mi} | gender_i = male , occ_{mi} = o) \\
+= \mathbb{E}(w_{fi} | occ_{fi} = o) -\mathbb{E}(w_{mi} | occ_{mi} = o)
+$$
+
+
+We can't go beyond the last step because occupation and wages aren't actually independantly determined, in our case due to ability. (remember, gender -> occ <- ability). More over
+
+Regression intuition wise, the ability variable from the true DGP has gone into the error term, but ability is correlated with gender for a given occupation, and ability is also related to wages directly.
+
+All in all for trying to control the channel gender -> occ -> wages, we introduced gender -> occ <- ability, which might arguable be a worse estimate than what the confounding channel we eliminated.
+
+But if we could observe ability levels, our lives are easy. Our estimate is `r mod_god$coefficients[2]` which is very close to the direct effect of gender on wages in our constructed case. This is simply because that is what the DGP actually looks like!
+
+
